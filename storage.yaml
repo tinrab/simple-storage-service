@@ -1,0 +1,46 @@
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: storage-deployment
+  labels:
+    app: storage
+spec:
+  selector:
+    matchLabels:
+      app: storage
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: storage
+    spec:
+      containers:
+      - name: storage
+        image: local/storage
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3000
+        env:
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-minio-user
+              key: accesskey
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-minio-user
+              key: secretkey
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: storage
+  ports:
+  - port: 3000
