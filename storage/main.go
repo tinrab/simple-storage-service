@@ -25,6 +25,15 @@ type ListFilesResponse struct {
 	Data []File `json:"data"`
 }
 
+type Bucket struct {
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type ListBucketsResponse struct {
+	Data []Bucket `json:"data"`
+}
+
 func main() {
 	// Init Minio
 	minioAccessKey := os.Getenv("MINIO_ACCESS_KEY")
@@ -37,9 +46,10 @@ func main() {
 
 	r := gin.Default()
 	r.GET("/buckets", listBucketsHandler)
-	r.GET("/buckets/:name/files", listFilesHandler)
-	r.POST("/buckets/:name", createBucketHandler)
-	r.POST("/buckets/:name/files", createFileHandler)
+	r.GET("/buckets/:bucket/files", listFilesHandler)
+	r.POST("/buckets/:bucket", createBucketHandler)
+	r.POST("/buckets/:bucket/files", createFileHandler)
+	r.DELETE("/buckets/:bucket/files/:file", deleteFileHandler)
 	if err := r.Run(":3000"); err != nil {
 		log.Fatal(err)
 	}
@@ -49,12 +59,19 @@ func listBucketsHandler(c *gin.Context) {
 	if buckets, err := minioClient.ListBuckets(); err != nil {
 		c.JSON(http.StatusInternalServerError, err.Error())
 	} else {
-		c.JSON(http.StatusOK, buckets)
+		res := ListBucketsResponse{}
+		for _, b := range buckets {
+			res.Data = append(res.Data, Bucket{
+				Name:      b.Name,
+				CreatedAt: b.CreationDate,
+			})
+		}
+		c.JSON(http.StatusOK, res)
 	}
 }
 
 func listFilesHandler(c *gin.Context) {
-	bucketName := c.Param("name")
+	bucketName := c.Param("bucket")
 	done := make(chan struct{})
 	defer close(done)
 	objects := minioClient.ListObjectsV2(bucketName, "", true, done)
@@ -71,7 +88,7 @@ func listFilesHandler(c *gin.Context) {
 }
 
 func createBucketHandler(c *gin.Context) {
-	bucketName := c.Param("name")
+	bucketName := c.Param("bucket")
 	if err := minioClient.MakeBucket(bucketName, ""); err != nil {
 		if exists, err := minioClient.BucketExists(bucketName); err == nil && exists {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -90,7 +107,7 @@ func createBucketHandler(c *gin.Context) {
 }
 
 func createFileHandler(c *gin.Context) {
-	bucketName := c.Param("name")
+	bucketName := c.Param("bucket")
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -114,5 +131,19 @@ func createFileHandler(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "File saved",
+	})
+}
+
+func deleteFileHandler(c *gin.Context) {
+	bucketName := c.Param("bucket")
+	fileName := c.Param("file")
+	if err := minioClient.RemoveObject(bucketName, fileName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Could not delete file",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "File deleted",
 	})
 }
