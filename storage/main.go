@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -47,6 +48,7 @@ func main() {
 	r := gin.Default()
 	r.GET("/buckets", listBucketsHandler)
 	r.GET("/buckets/:bucket/files", listFilesHandler)
+	r.GET("/buckets/:bucket/files/:file", getFileHandler)
 	r.POST("/buckets/:bucket", createBucketHandler)
 	r.POST("/buckets/:bucket/files", createFileHandler)
 	r.DELETE("/buckets/:bucket/files/:file", deleteFileHandler)
@@ -85,6 +87,24 @@ func listFilesHandler(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, res)
+}
+
+func getFileHandler(c *gin.Context) {
+	bucketName := c.Param("bucket")
+	fileName := c.Param("file")
+	object, err := minioClient.GetObject(bucketName, fileName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "File not found",
+		})
+		return
+	}
+	_, err = io.Copy(c.Writer, object)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Could not serve file",
+		})
+	}
 }
 
 func createBucketHandler(c *gin.Context) {
